@@ -37,8 +37,8 @@ class libFM:
         The seed of the pseudo random number generator
     """
     
-    def __init__(self, num_attribute, learn_rate=0.01, num_iter=10, dim=(1,1,8),
-                param_regular=(0,0,0.1), init_stdev=0.01, task='regression', 
+    def __init__(self, num_attribute, learn_rate=0.01, num_iter=10, dim=(1,1,3),
+                param_regular=(0,0,0.1), init_stdev=0.1, task='regression', 
                 method='mcmc', verbose=True, seed=None, output_file='output.csv'):
         
         self.num_attribute = num_attribute
@@ -69,8 +69,8 @@ class libFM:
         self.w = np.random.normal(init_mean, init_stdev, self.num_attribute)
         self.v = np.random.normal(init_mean, init_stdev, (self.num_factor, self.num_attribute))
 
-        m_sum = np.zeros(self.num_factor)
-        m_sum_sqr = np.zeros(self.num_factor)
+        #m_sum = np.zeros(self.num_factor)
+        #m_sum_sqr = np.zeros(self.num_factor)
     
         self.do_sample = True
         self.do_multilevel = True
@@ -92,6 +92,9 @@ class MCMC_learn:
         self.min_target = train.min_target
         self.max_target = train.max_target
         
+        self.train = train
+        self.test = test
+        
         self.cache_for_group_values = np.zeros(meta.num_attr_groups)
 
         self.alpha_0, self.gamma_0, self.beta_0, self.mu_0  = 1.0, 1.0, 1.0, 0.0 
@@ -111,68 +114,71 @@ class MCMC_learn:
         self.cache  = np.zeros((2, train.num_cases),dtype=float) #e_q_term 
         self.cache_test = np.zeros((2, test.num_cases), dtype=float) #e_q_term 
         
-    def learn(self, train, test):
+    def learn(self):
 
-        self.fm.reg0 = 0.0; self.fm.regw = 0.0; self.fm.regv = 0.0;
-
-        # make a collection of datasets that are predicted jointly
-        main_data = [train, test] 
-        main_cache = [self.cache, self.cache_test]  
-
-        self.predict_data_and_write_to_eterms(main_data, main_cache)
+        self.fm.reg0, self.fm.regw, self.fm.regv = 0.0, 0.0, 0.0
+        self.predict_data_and_write_to_eterms()
+        
+        print 'bef', self.cache[0]
         
         if self.fm.task == 'regression':
             # remove the target from each prediction, because: e(c) := \hat{y}(c) - target(c)
-            self.cache[0] -= train.target_value
+            self.cache[0] -= self.train.target_value
         else:
             raise Exception("Unknown task")
         
+        print 'aft', self.cache[0]
+        
         for i in xrange(self.num_iter):
-            self.draw_all(train)
-            self.predict_data_and_write_to_eterms(main_data, main_cache)
+            self.draw_all()
+            self.predict_data_and_write_to_eterms()
 
             acc_train = 0.0
             rmse_train = 0.0
             if self.fm.task == 'regression':
                 # evaluate test and store it
                 tmp = np.copy(self.cache_test[0])
+                print 'tmp', tmp
                 pred_this = np.copy(tmp)
-                print tmp
                 tmp = np.clip(tmp, self.min_target, self.max_target)
                 self.pred_sum_all += tmp
                 
                 # Evaluate the training dataset and update the e-terms 
                 tmp = np.copy(self.cache[0])
                 tmp = np.clip(tmp, self.min_target, self.max_target)
-                err = tmp - train.target_value
+                err = tmp - self.train.target_value
                 rmse_train = np.sum(err*err)
-                self.cache[0] -= train.target_value
-                rmse_train = np.sqrt(rmse_train/train.num_cases)
+                self.cache[0] -= self.train.target_value
+                rmse_train = np.sqrt(rmse_train/self.train.num_cases)
             elif self.fm.task == 'classification':
                 continue
             else:
                 raise Exception('Unknown task')
             #Evaluate the test data set
             if self.fm.task == 'regression':
-                rmse_test_this, mae_test_this = self.evaluate(self.pred_this, test.target_value, 1.0, 0, self.num_eval_cases)
-                rmse_test_all, mae_test_all = self.evaluate(self.pred_sum_all, test.target_value, 1.0/(i+1), 0, self.num_eval_cases)
+                rmse_test_this, mae_test_this = self.evaluate(self.pred_this, self.test.target_value, 1.0, 0, self.num_eval_cases)
+                rmse_test_all, mae_test_all = self.evaluate(self.pred_sum_all, self.test.target_value, 1.0/(i+1), 0, self.num_eval_cases)
                 print "#Iter=", i, "\tTrain=", rmse_train, "\tTest=", rmse_test_all
 
             else:
                 raise Exception('Unknown task')
         
+        print 'w0', self.fm.w0
+        #print 'w', self.fm.w
+        #print 'v', self.fm.v
+        
         if self.fm.save:
-            print test.target_value, test.num_feature, test.num_values, test.num_cases
-            pred = self.predict(test)
+            print self.test.target_value, self.test.num_feature, self.test.num_values, self.test.num_cases
+            pred = self.predict()
             np.savetxt(self.fm.output_file, pred, delimiter=",", fmt='%.10f') #default fmt='%.18e'
     
-    def predict(self, data): 
+    def predict(self): 
 
         if self.fm.do_sample:
-            assert(data.num_cases == self.pred_sum_all.shape[0])
+            assert(self.test.num_cases == self.pred_sum_all.shape[0])
             out = self.pred_sum_all / self.num_iter
         else:
-            assert(data.num_cases == self.pred_this.shape[0])
+            assert(self.test.num_cases == self.pred_this.shape[0])
             out = np.copy(self.pred_this)
         
         print out
@@ -186,15 +192,10 @@ class MCMC_learn:
         return out
 
     
-    def predict_data_and_write_to_eterms(self, main_data, main_cache):
+    def predict_data_and_write_to_eterms(self):
 
-        assert(len(main_data) == len(main_cache))
-        if len(main_data) == 0:
-            return
-        
-        # do this using only the transpose copy of the training data:
-        for ds in xrange(len(main_cache)):
-            main_cache[ds] = np.zeros_like(main_cache[ds]) 
+        self.cache = np.zeros_like(self.cache) 
+        self.cache_test = np.zeros_like(self.cache_test) 
         
         # (1) do the 1/2 sum_f (sum_i v_if x_i)^2 and store it in the e/y-term
         for f in xrange(self.fm.num_factor):
@@ -202,19 +203,17 @@ class MCMC_learn:
         
             # calculate cache[i].q = sum_i v_if x_i (== q_f-term)
             # Complexity: O(N_z(X^M))
-            for ds in xrange(len(main_cache)):
-                m_cache = main_cache[ds] 
-                m_data = main_data[ds]
-                m_cache[1] += v * m_data.data_t
-                
+            self.cache[1] += v * self.train.data_t
+            self.cache_test[1] += v * self.test.data_t
       
             # add 0.5*q^2 to e and set q to zero.
             # O(n*|B|)
-            for ds in xrange(len(main_cache)):
-                m_cache = main_cache[ds] 
-                m_data = main_data[ds] 
-                m_cache[0] += 0.5 * m_cache[1] * m_cache[1]
-                m_cache[1] = np.zeros_like(m_cache[1])
+            self.cache[0] += 0.5 * self.cache[1] * self.cache[1]
+            self.cache[1] = np.zeros_like(self.cache[1])
+            self.cache_test[0] += 0.5 * self.cache_test[1] * self.cache_test[1]
+            self.cache_test[1] = np.zeros_like(self.cache_test[1])
+     
+        #print '(2)', self.cache_test[0]
      
         # (2) do -1/2 sum_f (sum_i v_if^2 x_i^2) and store it in the q-term
         for f in xrange(self.fm.num_factor):
@@ -222,27 +221,24 @@ class MCMC_learn:
 
             # sum up the q^S_f terms in the main-q-cache: 0.5*sum_i (v_if x_i)^2 (== q^S_f-term)
             # Complexity: O(N_z(X^M))
-            for ds in xrange(len(main_cache)):
-                m_cache = main_cache[ds] 
-                m_data = main_data[ds]
-                m_cache[1] -= 0.5 * (v * v) * m_data.data_t.multiply(m_data.data_t)
+            self.cache[1] -= 0.5 * (v * v) * self.train.data_t.multiply(self.train.data_t)
+            self.cache_test[1] -= 0.5 * (v * v) * self.test.data_t.multiply(self.test.data_t)
         
         # (3) add the w's to the q-term    
         if self.fm.k1:
-            for ds in xrange(len(main_cache)):
-                m_cache = main_cache[ds] #e_q_term*
-                m_data = main_data[ds] #Data*
-                m_cache[1] += self.fm.w * m_data.data_t
+            self.cache[1] += self.fm.w * self.train.data_t
+            self.cache_test[1] += self.fm.w * self.test.data_t
         
         # (3) merge both for getting the prediction: w0+e(c)+q(c)
-        for ds in xrange(len(main_cache)):
-            m_cache = main_cache[ds] # e_q_term* 
-            m_data = main_data[ds] #Data* 
-            
-            m_cache[0] += m_cache[1]
-            if self.fm.k0:
-                m_cache[0] += self.fm.w0
-            m_cache[1] = np.zeros_like(m_cache[1])
+      
+        self.cache[0] += self.cache[1]
+        self.cache_test[0] += self.cache_test[1]
+        if self.fm.k0:
+            self.cache[0] += self.fm.w0
+            self.cache_test[0] += self.fm.w0
+        self.cache[1], self.cache_test[1] = np.zeros_like(self.cache[1]), np.zeros_like(self.cache_test[1]) 
+       
+        #print '(3)', self.cache_test[0]
        
     #rmse_test_all, mae_test_all = self.evaluate(self.pred_sum_all, test.target_value, 1.0/(i+1), 0, self.num_eval_cases)   
     def evaluate(self, pred, target, normalizer, from_case, to_case):
@@ -264,11 +260,11 @@ class MCMC_learn:
         
         return rmse, mae
         
-    def draw_all(self, train):
+    def draw_all(self):
         
-        self.draw_alpha(self.alpha, train.num_cases)
+        self.draw_alpha(self.alpha, self.train.num_cases)
         if self.fm.k0 :
-            self.draw_w0(self.fm.w0, self.fm.reg0, train)
+            self.draw_w0()
             
         if self.fm.k1:
             self.draw_w_lambda()
@@ -276,7 +272,7 @@ class MCMC_learn:
 
             # draw the w from their posterior
             g = self.meta.attr_group
-            self.draw_w(self.w_mu[g], self.w_lambda[g], train.data_t)
+            self.draw_w(self.w_mu[g], self.w_lambda[g], self.train.data_t)
         
         if self.fm.num_factor > 0:
             self.draw_v_lambda()
@@ -284,36 +280,33 @@ class MCMC_learn:
             
         for f in xrange(self.fm.num_factor):
 
-            self.cache[1] = np.zeros(train.num_cases)
-            self.add_main_q(train, f)
+            self.cache[1] = np.zeros(self.train.num_cases)
+            # add the q(f)-terms to the main relation q-cache (using only the transpose data)
+            self.cache[1] += self.fm.v[f]  * self.train.data_t
             
             # draw the thetas from their posterior
             g = self.meta.attr_group
-            self.draw_v(f, self.v_mu[g,f], self.v_lambda[g,f], train.data_t)
-   
-    # add the q(f)-terms to the main relation q-cache (using only the transpose data)
-    def add_main_q(self, train, f): 
-        self.cache[1] += self.fm.v[f]  * train.data_t
+            self.draw_v(f, self.v_mu[g,f], self.v_lambda[g,f], self.train.data_t)
             
     # Find the optimal value for the global bias (0-way interaction)
-    def draw_w0(self, w0, reg, train):
+    def draw_w0(self):
         
-        assert(train.num_cases == self.cache[0].shape[0])
+        assert(self.train.num_cases == self.cache[0].shape[0])
         
-        w0_mean = np.sum(self.cache[0] - w0) 
-        w0_sigma_sqr = 1.0 / (reg + self.alpha * train.num_cases)
-        w0_mean = - w0_sigma_sqr * (self.alpha * w0_mean - self.w0_mean_0 * reg)
+        w0_mean = np.sum(self.cache[0] - self.fm.w0) 
+        w0_sigma_sqr = 1.0 / (self.fm.reg0 + self.alpha * self.train.num_cases)
+        w0_mean = - w0_sigma_sqr * (self.alpha * w0_mean - self.w0_mean_0 * self.fm.reg0)
         
         # update w0
-        w0_old = w0
+        w0_old = self.fm.w0
 
         if self.fm.do_sample:
-            w0 = self.ran_gaussian(w0_mean, np.sqrt(w0_sigma_sqr))
+            self.fm.w0 = self.ran_gaussian(w0_mean, np.sqrt(w0_sigma_sqr))
         else:
-            w0 = w0_mean
+            self.fm.w0 = w0_mean
 
         # update error
-        self.cache[0] -= (w0_old - w0)
+        self.cache[0] -= (w0_old - self.fm.w0)
    
     
     # Find the optimal value for the 1-way interaction w
@@ -604,7 +597,6 @@ def get_num_attribute(filename):
                 has_feature = True
     if has_feature:    
         num_feature += 1 # number of feature is bigger (by one) than the largest value
-   
     return num_feature
     
              
@@ -622,7 +614,7 @@ def main():
     meta = DataMetaInfo(num_all_attribute)
     fm = libFM(num_all_attribute, seed=1)
     mcmc = MCMC_learn(fm, meta, train, test)
-    mcmc.learn(train, test)
+    mcmc.learn()
     
 if __name__ == "__main__":
     main()
