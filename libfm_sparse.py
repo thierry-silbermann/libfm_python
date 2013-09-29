@@ -37,13 +37,13 @@ class libFM:
         The seed of the pseudo random number generator
     """
     
-    def __init__(self, num_attribute, learn_rate=0.01, num_iter=10, dim=(1,1,3),
-                param_regular=(0,0,0.1), init_stdev=0.1, task='regression', 
+    def __init__(self, num_attribute, learn_rate=0.01, num_iter=5, dim=(1,1,3),
+                param_regular=(0,0,0.1), init_stdev=0.05, task='regression', 
                 method='mcmc', verbose=True, seed=None, output_file='output.csv'):
         
         self.num_attribute = num_attribute
         self.num_iter = num_iter
-        self.learn_rate = learn_rate
+        #self.learn_rate = learn_rate
         self.init_stdev = init_stdev
         self.dim = dim
         self.task = task
@@ -119,15 +119,11 @@ class MCMC_learn:
         self.fm.reg0, self.fm.regw, self.fm.regv = 0.0, 0.0, 0.0
         self.predict_data_and_write_to_eterms()
         
-        print 'bef', self.cache[0]
-        
         if self.fm.task == 'regression':
             # remove the target from each prediction, because: e(c) := \hat{y}(c) - target(c)
             self.cache[0] -= self.train.target_value
         else:
             raise Exception("Unknown task")
-        
-        print 'aft', self.cache[0]
         
         for i in xrange(self.num_iter):
             self.draw_all()
@@ -138,7 +134,7 @@ class MCMC_learn:
             if self.fm.task == 'regression':
                 # evaluate test and store it
                 tmp = np.copy(self.cache_test[0])
-                print 'tmp', tmp
+                #print 'tmp', tmp
                 pred_this = np.copy(tmp)
                 tmp = np.clip(tmp, self.min_target, self.max_target)
                 self.pred_sum_all += tmp
@@ -163,12 +159,13 @@ class MCMC_learn:
             else:
                 raise Exception('Unknown task')
         
-        print 'w0', self.fm.w0
-        #print 'w', self.fm.w
-        #print 'v', self.fm.v
+        print 'w0:', self.fm.w0
+        print 'w:', self.fm.w
+        print 'v:', self.fm.v
         
         if self.fm.save:
             print self.test.target_value, self.test.num_feature, self.test.num_values, self.test.num_cases
+            print np.mean(self.test.target_value)
             pred = self.predict()
             np.savetxt(self.fm.output_file, pred, delimiter=",", fmt='%.10f') #default fmt='%.18e'
     
@@ -197,9 +194,12 @@ class MCMC_learn:
         self.cache = np.zeros_like(self.cache) 
         self.cache_test = np.zeros_like(self.cache_test) 
         
+        print '############ (1)'
+        print 'v', self.fm.v
+        
         # (1) do the 1/2 sum_f (sum_i v_if x_i)^2 and store it in the e/y-term
         for f in xrange(self.fm.num_factor):
-            v = self.fm.v[f] #double*
+            v = self.fm.v[f] 
         
             # calculate cache[i].q = sum_i v_if x_i (== q_f-term)
             # Complexity: O(N_z(X^M))
@@ -212,6 +212,10 @@ class MCMC_learn:
             self.cache[1] = np.zeros_like(self.cache[1])
             self.cache_test[0] += 0.5 * self.cache_test[1] * self.cache_test[1]
             self.cache_test[1] = np.zeros_like(self.cache_test[1])
+     
+        print 'cache', self.cache[0]
+        print 'cache_t', self.cache_test[0]
+        print '############ (2)'
      
         #print '(2)', self.cache_test[0]
      
@@ -250,8 +254,7 @@ class MCMC_learn:
         tmp = pred[:end] * normalizer
         tmp = np.clip(tmp, self.min_target, self.max_target)
         err = tmp - target[:end]
-        _rmse = np.sum(err*err)
-        _mae = np.sum(np.absolute(err))
+        _rmse, _mae = np.sum(err*err), np.sum(np.absolute(err))
         
         num_cases = end
         
@@ -262,7 +265,7 @@ class MCMC_learn:
         
     def draw_all(self):
         
-        self.draw_alpha(self.alpha, self.train.num_cases)
+        self.draw_alpha()
         if self.fm.k0 :
             self.draw_w0()
             
@@ -272,7 +275,7 @@ class MCMC_learn:
 
             # draw the w from their posterior
             g = self.meta.attr_group
-            self.draw_w(self.w_mu[g], self.w_lambda[g], self.train.data_t)
+            self.draw_w(self.w_mu[g], self.w_lambda[g])
         
         if self.fm.num_factor > 0:
             self.draw_v_lambda()
@@ -280,13 +283,13 @@ class MCMC_learn:
             
         for f in xrange(self.fm.num_factor):
 
-            self.cache[1] = np.zeros(self.train.num_cases)
+            self.cache[1] = np.zeros_like(self.cache[1])
             # add the q(f)-terms to the main relation q-cache (using only the transpose data)
             self.cache[1] += self.fm.v[f]  * self.train.data_t
             
             # draw the thetas from their posterior
             g = self.meta.attr_group
-            self.draw_v(f, self.v_mu[g,f], self.v_lambda[g,f], self.train.data_t)
+            self.draw_v(f, self.v_mu[g,f], self.v_lambda[g,f])
             
     # Find the optimal value for the global bias (0-way interaction)
     def draw_w0(self):
@@ -310,15 +313,13 @@ class MCMC_learn:
    
     
     # Find the optimal value for the 1-way interaction w
-    def draw_w(self, w_mu, w_lambda, X):
-        x_li = X.tocsr()
-        cache_li = self.cache
-        
+    def draw_w(self, w_mu, w_lambda):
+        x_li = self.train.data_t.tocsr()
         nnz_per_row = np.diff(x_li.indptr)
         Y = sps.csr_matrix((x_li.data * np.repeat(self.fm.w, nnz_per_row), x_li.indices, x_li.indptr), shape=x_li.shape)
-        Y.data -= np.take(cache_li[1], Y.indices)
+        Y.data -= np.take(self.cache[1], Y.indices)
         h = x_li.multiply(-Y)
-        h.data *= np.take(cache_li[0], h.indices)
+        h.data *= np.take(self.cache[0], h.indices)
         
         w_mean = np.asarray(h.sum(axis=1).transpose())[0]
         w_sigma_sqr = np.asarray(( x_li.multiply(x_li) ).sum(axis=1).transpose())[0]
@@ -342,8 +343,8 @@ class MCMC_learn:
 
         
     # Find the optimal value for the 2-way interaction parameter v
-    def draw_v(self, f, v_mu, v_lambda, X): 
-        x_li = X.tocsr()
+    def draw_v(self, f, v_mu, v_lambda): 
+        x_li = self.train.data_t.tocsr()
         v = self.fm.v[f]
         cache_li = self.cache
         
@@ -383,21 +384,21 @@ class MCMC_learn:
         Y.data -= np.take(cache_li[1], Y.indices)
         h = x_li.multiply(-Y)
         
-        cache_li[1] -= (v_old - v) * x_li
-        cache_li[0] -= (v_old - v) * h
+        self.cache[1] -= (v_old - v) * x_li
+        self.cache[0] -= (v_old - v) * h
 
         
-    def draw_alpha(self, alpha, num_train_total):
+    def draw_alpha(self):
         if not self.fm.do_multilevel:
-            alpha = self.alpha_0
+            self.alpha = self.alpha_0
             return
         
-        alpha_n = self.alpha_0 + num_train_total
+        alpha_n = self.alpha_0 + self.train.num_cases
         gamma_n = self.gamma_0
         
         gamma_n = np.sum(self.cache[0] * self.cache[0])
         
-        alpha_old = alpha
+        #alpha_old = self.alpha
         alpha = self.ran_gamma(alpha_n / 2.0, gamma_n / 2.0) #TODO ran_gamma
         
         #Check limit TODO
@@ -459,7 +460,7 @@ class MCMC_learn:
  
             v_mu_mean = (v_mu_mean + self.beta_0 * self.mu_0) / (self.meta.num_attr_per_group + self.beta_0)
             v_mu_sigma_sqr = 1.0 / ((self.meta.num_attr_per_group + self.beta_0) * self.v_lambda[:, f])
-            v_mu_old = self.v_mu[:,f]
+            #v_mu_old = self.v_mu[:,f]
             
             if self.fm.do_sample:
                 self.v_mu[:,f] = self.ran_gaussian(v_mu_mean, np.sqrt(v_mu_sigma_sqr))
@@ -477,7 +478,7 @@ class MCMC_learn:
             v_lambda_gamma += np.bincount(g, weights=((self.fm.v[f,:] - self.v_mu[g,f]) * (self.fm.v[f,:] - self.v_mu[g,f])) )
 
             v_lambda_alpha = self.alpha_0 + self.meta.num_attr_per_group + 1
-            v_lambda_old = self.v_lambda[:,f]
+            #v_lambda_old = self.v_lambda[:,f]
             if self.fm.do_sample:
                 self.v_lambda[:,f] = self.ran_gamma(v_lambda_alpha / 2.0, v_lambda_gamma / 2.0);
             else:
@@ -565,7 +566,7 @@ class Data:
         assert(num_values == cacheID)  
         
         self.data = coo_matrix((values,(rows, cols)), shape=(num_rows, max_feature))
-        self.num_cases = num_rows
+        self.num_cases = num_rows 
 
         if has_xt:
             self.data_t = self.data.transpose()
@@ -601,8 +602,8 @@ def get_num_attribute(filename):
     
              
 def main():
-    train_file = 'train.libfm' #small_
-    test_file = 'test.libfm'
+    train_file = 'data/small_train.libfm' #small_
+    test_file = 'data/small_test.libfm'
     
     num_all_attribute = max(get_num_attribute(train_file), get_num_attribute(test_file))
     
