@@ -38,7 +38,7 @@ class libFM:
     """
     
     def __init__(self, num_attribute, learn_rate=0.01, num_iter=5, dim=(1,1,3),
-                param_regular=(0,0,0.1), init_stdev=0.05, task='regression', 
+                param_regular=(0,0,0.1), init_stdev=0.1, task='regression', 
                 method='mcmc', verbose=True, seed=None, output_file='output.csv'):
         
         self.num_attribute = num_attribute
@@ -54,9 +54,12 @@ class libFM:
         self.num_factor = dim[2]    
         
         # Regularization Parameters
-        self.reg0 = param_regular[0]
-        self.regw = param_regular[1]
-        self.regv = param_regular[2]
+        if method == 'mcmc':
+            self.reg0, self.regw, self.regv = 0.0, 0.0, 0.0
+        else:
+            self.reg0 = param_regular[0]
+            self.regw = param_regular[1]
+            self.regv = param_regular[2]
         
         self.verbose = verbose
         self.seed = seed
@@ -103,10 +106,10 @@ class MCMC_learn:
         self.w0_mean_0 = 0.0 
  
         self.w_mu = np.zeros(meta.num_attr_groups, dtype=float)
-        self.w_lambda = np.zeros(meta.num_attr_groups, dtype=float) 
+        self.w_lambda = fm.regw * np.ones(meta.num_attr_groups, dtype=float) 
         
         self.v_mu = np.zeros((meta.num_attr_groups, fm.num_factor), dtype=float)
-        self.v_lambda = np.zeros((meta.num_attr_groups, fm.num_factor), dtype=float) 
+        self.v_lambda = fm.regv * np.ones((meta.num_attr_groups, fm.num_factor), dtype=float) 
         
         self.pred_sum_all = np.zeros(test.num_cases, dtype=float) 
         self.pred_this = np.zeros(test.num_cases, dtype=float) 
@@ -189,13 +192,14 @@ class MCMC_learn:
         return out
 
     
+    #Ok
     def predict_data_and_write_to_eterms(self):
 
         self.cache = np.zeros_like(self.cache) 
         self.cache_test = np.zeros_like(self.cache_test) 
         
-        print '############ (1)'
-        print 'v', self.fm.v
+        #print '############ (1)'
+        #print 'v', self.fm.v
         
         # (1) do the 1/2 sum_f (sum_i v_if x_i)^2 and store it in the e/y-term
         for f in xrange(self.fm.num_factor):
@@ -205,6 +209,9 @@ class MCMC_learn:
             # Complexity: O(N_z(X^M))
             self.cache[1] += v * self.train.data_t
             self.cache_test[1] += v * self.test.data_t
+            
+            #print 'q cache', self.cache[1]
+            #print 'q cache_t', self.cache_test[1]
       
             # add 0.5*q^2 to e and set q to zero.
             # O(n*|B|)
@@ -213,11 +220,11 @@ class MCMC_learn:
             self.cache_test[0] += 0.5 * self.cache_test[1] * self.cache_test[1]
             self.cache_test[1] = np.zeros_like(self.cache_test[1])
      
-        print 'cache', self.cache[0]
-        print 'cache_t', self.cache_test[0]
-        print '############ (2)'
+            #print 'e cache', self.cache[0]
+            #print 'e cache_t', self.cache_test[0]
+            
      
-        #print '(2)', self.cache_test[0]
+        #print '\n (2) do -1/2 sum_f (sum_i v_if^2 x_i^2) and store it in the q-term'
      
         # (2) do -1/2 sum_f (sum_i v_if^2 x_i^2) and store it in the q-term
         for f in xrange(self.fm.num_factor):
@@ -227,12 +234,21 @@ class MCMC_learn:
             # Complexity: O(N_z(X^M))
             self.cache[1] -= 0.5 * (v * v) * self.train.data_t.multiply(self.train.data_t)
             self.cache_test[1] -= 0.5 * (v * v) * self.test.data_t.multiply(self.test.data_t)
+            
+            #print 'q cache', self.cache[1]
+            #print 'q cache_t', self.cache_test[1]
         
+        #print '\n (3) add the w to the q-term '
+        #print 'w', self.fm.w
         # (3) add the w's to the q-term    
         if self.fm.k1:
             self.cache[1] += self.fm.w * self.train.data_t
             self.cache_test[1] += self.fm.w * self.test.data_t
         
+            #print 'q cache', self.cache[1]
+            #print 'q cache_t', self.cache_test[1]
+        
+        #print '\n (3) merge both for getting the prediction: w0+e(c)+q(c)'
         # (3) merge both for getting the prediction: w0+e(c)+q(c)
       
         self.cache[0] += self.cache[1]
@@ -241,6 +257,9 @@ class MCMC_learn:
             self.cache[0] += self.fm.w0
             self.cache_test[0] += self.fm.w0
         self.cache[1], self.cache_test[1] = np.zeros_like(self.cache[1]), np.zeros_like(self.cache_test[1]) 
+        
+        #print 'e cache', self.cache[0]
+        #print 'e cache_t', self.cache_test[0]
        
         #print '(3)', self.cache_test[0]
        
@@ -398,8 +417,11 @@ class MCMC_learn:
         
         gamma_n = np.sum(self.cache[0] * self.cache[0])
         
+        print alpha_n, gamma_n
+        
         #alpha_old = self.alpha
-        alpha = self.ran_gamma(alpha_n / 2.0, gamma_n / 2.0) #TODO ran_gamma
+        self.alpha = self.ran_gamma(alpha_n / 2.0, gamma_n / 2.0) #TODO ran_gamma
+        print 'alpha', self.alpha
         
         #Check limit TODO
         
@@ -418,9 +440,9 @@ class MCMC_learn:
         w_mu_old = self.w_mu
         
         if self.fm.do_sample:
-            w_mu = self.ran_gaussian(w_mu_mean, np.sqrt(w_mu_sigma_sqr))
+            self.w_mu = self.ran_gaussian(w_mu_mean, np.sqrt(w_mu_sigma_sqr))
         else:
-            w_mu = w_mu_mean
+            self.w_mu = w_mu_mean
 
             # check for out of bounds values 
             #Check limit TODO
@@ -493,7 +515,8 @@ class MCMC_learn:
         return mean + stdev * np.random.randn()
         
     def ran_gamma(self, alpha, beta):
-        return np.random.gamma(alpha, beta)
+        return np.random.gamma(alpha) / beta
+        
 
 
 ####################################
