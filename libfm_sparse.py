@@ -37,7 +37,7 @@ class libFM:
         The seed of the pseudo random number generator
     """
     
-    def __init__(self, num_attribute, learn_rate=0.01, num_iter=100, dim=(1,1,0),
+    def __init__(self, num_attribute, learn_rate=0.01, num_iter=2, dim=(1,0,1),
                 param_regular=(0,0,0.1), init_stdev=0.1, task='regression', 
                 method='mcmc', verbose=True, seed=None, output_file='output.csv'):
         
@@ -506,17 +506,22 @@ class MCMC_learn:
             return
             
         for f in xrange(self.fm.num_factor):
-        
+            print '# Factor:', f
             v_lambda_gamma = self.beta_0 * (self.v_mu[:,f] - self.mu_0) * (self.v_mu[:,f] - self.mu_0) + self.gamma_0
+            print '1st loop', v_lambda_gamma
             
             g = self.meta.attr_group
             v_lambda_gamma += np.bincount(g, weights=((self.fm.v[f,:] - self.v_mu[g,f]) * (self.fm.v[f,:] - self.v_mu[g,f])) )
+            print '2nd loop', v_lambda_gamma
 
             g = np.unique(g)
             v_lambda_alpha = self.alpha_0 + self.meta.num_attr_per_group[g] + 1
+            print 'v_lambda_alpha'
             #v_lambda_old = self.v_lambda[:,f]
             if self.fm.do_sample:
-                self.v_lambda[:,f] = self.ran_gamma(v_lambda_alpha / 2.0, v_lambda_gamma / 2.0);
+                print 'Before v_lambda[:,f]', self.v_lambda[:,f]
+                self.v_lambda[:,f] = self.ran_gamma(v_lambda_alpha / 2.0, v_lambda_gamma / 2.0)
+                print 'After v_lambda[:,f]', self.v_lambda[:,f]
             else:
                 self.v_lambda[:,f] = v_lambda_alpha / v_lambda_gamma
        
