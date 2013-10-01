@@ -37,7 +37,7 @@ class libFM:
         The seed of the pseudo random number generator
     """
     
-    def __init__(self, num_attribute, learn_rate=0.01, num_iter=5, dim=(1,1,3),
+    def __init__(self, num_attribute, learn_rate=0.01, num_iter=100, dim=(1,1,0),
                 param_regular=(0,0,0.1), init_stdev=0.1, task='regression', 
                 method='mcmc', verbose=True, seed=None, output_file='output.csv'):
         
@@ -101,7 +101,7 @@ class MCMC_learn:
         self.cache_for_group_values = np.zeros(meta.num_attr_groups)
 
         self.alpha_0, self.gamma_0, self.beta_0, self.mu_0  = 1.0, 1.0, 1.0, 0.0 
-        self.alpha = 1 
+        self.alpha = 1.0
         
         self.w0_mean_0 = 0.0 
  
@@ -192,8 +192,7 @@ class MCMC_learn:
         return out
 
     
-    #Ok
-    def predict_data_and_write_to_eterms(self):
+    def predict_data_and_write_to_eterms(self): #Ok
 
         self.cache = np.zeros_like(self.cache) 
         self.cache_test = np.zeros_like(self.cache_test) 
@@ -311,16 +310,18 @@ class MCMC_learn:
             self.draw_v(f, self.v_mu[g,f], self.v_lambda[g,f])
             
     # Find the optimal value for the global bias (0-way interaction)
-    def draw_w0(self):
+    def draw_w0(self): #ok
         
         assert(self.train.num_cases == self.cache[0].shape[0])
-        
+        print 'alpha', self.alpha
         w0_mean = np.sum(self.cache[0] - self.fm.w0) 
         w0_sigma_sqr = 1.0 / (self.fm.reg0 + self.alpha * self.train.num_cases)
         w0_mean = - w0_sigma_sqr * (self.alpha * w0_mean - self.w0_mean_0 * self.fm.reg0)
         
         # update w0
         w0_old = self.fm.w0
+        
+        print 'draw_w0: mean, sigsqr', w0_mean, w0_sigma_sqr
 
         if self.fm.do_sample:
             self.fm.w0 = self.ran_gaussian(w0_mean, np.sqrt(w0_sigma_sqr))
@@ -329,6 +330,7 @@ class MCMC_learn:
 
         # update error
         self.cache[0] -= (w0_old - self.fm.w0)
+        print 'draw_w0: e', self.cache[0]
    
     
     # Find the optimal value for the 1-way interaction w
@@ -348,9 +350,13 @@ class MCMC_learn:
 
         # update w:
         w_old = np.copy(self.fm.w)
+        
+        print 'draw_w: w_mu, w_lambda', w_mu, w_lambda
+        print 'draw_w: w_mean, w_sigma_sqr', w_mean, w_sigma_sqr
 
         if ( np.isnan(np.sum(w_sigma_sqr)) or np.isinf(np.sum(w_sigma_sqr)) ) :
             self.fm.w = 0.0
+            raise Exception('w NaN')
         else: 
             if self.fm.do_sample : 
                 self.fm.w = self.ran_gaussian(w_mean, np.sqrt(w_sigma_sqr))
@@ -359,6 +365,8 @@ class MCMC_learn:
             
         # update error:
         self.cache[0] -= (w_old - self.fm.w) * x_li
+        
+        print 'draw_w: e', self.cache[0]
 
         
     # Find the optimal value for the 2-way interaction parameter v
@@ -382,12 +390,14 @@ class MCMC_learn:
         
         # update v:
         v_old = np.copy(v)
+        
+        print 'draw_v: v_mean, v_sigma_sqr', v_mean, v_sigma_sqr
 
         if ( np.isnan(np.sum(v_sigma_sqr)) or np.isinf(np.sum(v_sigma_sqr)) ) :
             #v[np.isnan(v)] = 0
             #v[np.isinf(v)] = 0
             v = 0.0
-            #raise Exception('Is nan')
+            raise Exception('v NaN')
         else:
             if self.fm.do_sample:
                 self.fm.v[f] = self.ran_gaussian(v_mean, np.sqrt(v_sigma_sqr))
@@ -405,9 +415,12 @@ class MCMC_learn:
         
         self.cache[1] -= (v_old - v) * x_li
         self.cache[0] -= (v_old - v) * h
+        
+        print 'draw_v, q', self.cache[1]
+        print 'draw_v, e', self.cache[0]
 
         
-    def draw_alpha(self):
+    def draw_alpha(self): #ok
         if not self.fm.do_multilevel:
             self.alpha = self.alpha_0
             return
@@ -417,11 +430,8 @@ class MCMC_learn:
         
         gamma_n = np.sum(self.cache[0] * self.cache[0])
         
-        print alpha_n, gamma_n
-        
         #alpha_old = self.alpha
         self.alpha = self.ran_gamma(alpha_n / 2.0, gamma_n / 2.0) #TODO ran_gamma
-        print 'alpha', self.alpha
         
         #Check limit TODO
         
@@ -447,18 +457,21 @@ class MCMC_learn:
             # check for out of bounds values 
             #Check limit TODO
 
-    def draw_w_lambda(self):
+    def draw_w_lambda(self): #Ok
         if not self.fm.do_multilevel:
             return
-            
-        w_lambda_gamma = self.cache_for_group_values
+        
+        
+        #w_lambda_gamma = self.cache_for_group_values
         w_lambda_gamma = self.beta_0 * (self.w_mu - self.mu_0) * (self.w_mu - self.mu_0) + self.gamma_0
         
         g = self.meta.attr_group
-        w_lambda_gamma = np.bincount(g, weights=(self.fm.w - self.w_mu[g]) * (self.fm.w - self.w_mu[g]))
+        w_lambda_gamma += np.bincount(g, weights=(self.fm.w - self.w_mu[g]) * (self.fm.w - self.w_mu[g]))
         
+        g = np.unique(g)
         w_lambda_alpha = self.alpha_0 + self.meta.num_attr_per_group[g] + 1
-        w_lambda_old = self.w_lambda
+        #w_lambda_old = self.w_lambda
+        
 
         if self.fm.do_sample:
             self.w_lambda = self.ran_gamma(w_lambda_alpha / 2.0, w_lambda_gamma / 2.0)
@@ -477,8 +490,7 @@ class MCMC_learn:
         g = self.meta.attr_group
         for f in xrange(self.fm.num_factor):
             v_mu_mean = np.zeros_like(v_mu_mean)
-            v_mu_mean = np.bincount(g, weights=self.fm.v[f,:])
- 
+            v_mu_mean = np.bincount(g, weights=self.fm.v[f])
  
             v_mu_mean = (v_mu_mean + self.beta_0 * self.mu_0) / (self.meta.num_attr_per_group + self.beta_0)
             v_mu_sigma_sqr = 1.0 / ((self.meta.num_attr_per_group + self.beta_0) * self.v_lambda[:, f])
@@ -494,12 +506,14 @@ class MCMC_learn:
             return
             
         for f in xrange(self.fm.num_factor):
+        
             v_lambda_gamma = self.beta_0 * (self.v_mu[:,f] - self.mu_0) * (self.v_mu[:,f] - self.mu_0) + self.gamma_0
             
             g = self.meta.attr_group
             v_lambda_gamma += np.bincount(g, weights=((self.fm.v[f,:] - self.v_mu[g,f]) * (self.fm.v[f,:] - self.v_mu[g,f])) )
 
-            v_lambda_alpha = self.alpha_0 + self.meta.num_attr_per_group + 1
+            g = np.unique(g)
+            v_lambda_alpha = self.alpha_0 + self.meta.num_attr_per_group[g] + 1
             #v_lambda_old = self.v_lambda[:,f]
             if self.fm.do_sample:
                 self.v_lambda[:,f] = self.ran_gamma(v_lambda_alpha / 2.0, v_lambda_gamma / 2.0);
@@ -515,7 +529,11 @@ class MCMC_learn:
         return mean + stdev * np.random.randn()
         
     def ran_gamma(self, alpha, beta):
-        return np.random.gamma(alpha) / beta
+        tmp = np.random.gamma(alpha, 1/beta)
+        if isinstance(tmp, float):
+            return np.asarray([tmp])
+        else:
+            return tmp
         
 
 
