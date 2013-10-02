@@ -37,7 +37,7 @@ class libFM:
         The seed of the pseudo random number generator
     """
     
-    def __init__(self, num_attribute, learn_rate=0.01, num_iter=2, dim=(1,0,1),
+    def __init__(self, num_attribute, learn_rate=0.01, num_iter=50, dim=(1,1,1),
                 param_regular=(0,0,0.1), init_stdev=0.1, task='regression', 
                 method='mcmc', verbose=True, seed=None, output_file='output.csv'):
         
@@ -167,8 +167,8 @@ class MCMC_learn:
         print 'v:', self.fm.v
         
         if self.fm.save:
-            print self.test.target_value, self.test.num_feature, self.test.num_values, self.test.num_cases
-            print np.mean(self.test.target_value)
+            print 'True target:', self.test.target_value, self.test.num_feature, self.test.num_values, self.test.num_cases
+            #print np.mean(self.test.target_value)
             pred = self.predict()
             np.savetxt(self.fm.output_file, pred, delimiter=",", fmt='%.10f') #default fmt='%.18e'
     
@@ -181,7 +181,7 @@ class MCMC_learn:
             assert(self.test.num_cases == self.pred_this.shape[0])
             out = np.copy(self.pred_this)
         
-        print out
+        print 'Prediction before clipping:', out
         if self.fm.task == 'regression':
             out = np.clip(out, self.min_target, self.max_target)
         elif self.fm.task == 'classification':
@@ -313,7 +313,7 @@ class MCMC_learn:
     def draw_w0(self): #ok
         
         assert(self.train.num_cases == self.cache[0].shape[0])
-        print 'alpha', self.alpha
+        #print 'alpha', self.alpha
         w0_mean = np.sum(self.cache[0] - self.fm.w0) 
         w0_sigma_sqr = 1.0 / (self.fm.reg0 + self.alpha * self.train.num_cases)
         w0_mean = - w0_sigma_sqr * (self.alpha * w0_mean - self.w0_mean_0 * self.fm.reg0)
@@ -321,7 +321,7 @@ class MCMC_learn:
         # update w0
         w0_old = self.fm.w0
         
-        print 'draw_w0: mean, sigsqr', w0_mean, w0_sigma_sqr
+        #print 'draw_w0: mean, sigsqr', w0_mean, w0_sigma_sqr
 
         if self.fm.do_sample:
             self.fm.w0 = self.ran_gaussian(w0_mean, np.sqrt(w0_sigma_sqr))
@@ -330,7 +330,7 @@ class MCMC_learn:
 
         # update error
         self.cache[0] -= (w0_old - self.fm.w0)
-        print 'draw_w0: e', self.cache[0]
+        #print 'draw_w0: e', self.cache[0]
    
     
     # Find the optimal value for the 1-way interaction w
@@ -351,8 +351,8 @@ class MCMC_learn:
         # update w:
         w_old = np.copy(self.fm.w)
         
-        print 'draw_w: w_mu, w_lambda', w_mu, w_lambda
-        print 'draw_w: w_mean, w_sigma_sqr', w_mean, w_sigma_sqr
+        #print 'draw_w: w_mu, w_lambda', w_mu, w_lambda
+        #print 'draw_w: w_mean, w_sigma_sqr', w_mean, w_sigma_sqr
 
         if ( np.isnan(np.sum(w_sigma_sqr)) or np.isinf(np.sum(w_sigma_sqr)) ) :
             self.fm.w = 0.0
@@ -366,7 +366,7 @@ class MCMC_learn:
         # update error:
         self.cache[0] -= (w_old - self.fm.w) * x_li
         
-        print 'draw_w: e', self.cache[0]
+        #print 'draw_w: e', self.cache[0]
 
         
     # Find the optimal value for the 2-way interaction parameter v
@@ -391,7 +391,7 @@ class MCMC_learn:
         # update v:
         v_old = np.copy(v)
         
-        print 'draw_v: v_mean, v_sigma_sqr', v_mean, v_sigma_sqr
+        #print 'draw_v: v_mean, v_sigma_sqr', v_mean, v_sigma_sqr
 
         if ( np.isnan(np.sum(v_sigma_sqr)) or np.isinf(np.sum(v_sigma_sqr)) ) :
             #v[np.isnan(v)] = 0
@@ -416,8 +416,8 @@ class MCMC_learn:
         self.cache[1] -= (v_old - v) * x_li
         self.cache[0] -= (v_old - v) * h
         
-        print 'draw_v, q', self.cache[1]
-        print 'draw_v, e', self.cache[0]
+        #print 'draw_v, q', self.cache[1]
+        #print 'draw_v, e', self.cache[0]
 
         
     def draw_alpha(self): #ok
@@ -428,6 +428,7 @@ class MCMC_learn:
         alpha_n = self.alpha_0 + self.train.num_cases
         gamma_n = self.gamma_0
         
+        #print self.cache[0]
         gamma_n = np.sum(self.cache[0] * self.cache[0])
         
         #alpha_old = self.alpha
@@ -445,8 +446,9 @@ class MCMC_learn:
         g = self.meta.attr_group
         w_mu_mean = np.bincount(g, weights=self.fm.w)
         
-        w_mu_mean = (w_mu_mean + self.beta_0 * self.mu_0) / (self.meta.num_attr_per_group + self.beta_0)
-        w_mu_sigma_sqr = 1.0 / ((self.meta.num_attr_per_group + self.beta_0) * self.w_lambda)
+        g = np.unique(g)
+        w_mu_mean = (w_mu_mean + self.beta_0 * self.mu_0) / (self.meta.num_attr_per_group[g] + self.beta_0)
+        w_mu_sigma_sqr = 1.0 / ((self.meta.num_attr_per_group[g] + self.beta_0) * self.w_lambda)
         w_mu_old = self.w_mu
         
         if self.fm.do_sample:
@@ -480,7 +482,7 @@ class MCMC_learn:
  
         # check for out of bounds values
         
-    def draw_v_mu(self):
+    def draw_v_mu(self): #Okish
         if not self.fm.do_multilevel:
             self.v_mu = self.mu_0 * np.ones(self.v_mu) 
             return
@@ -492,6 +494,7 @@ class MCMC_learn:
             v_mu_mean = np.zeros_like(v_mu_mean)
             v_mu_mean = np.bincount(g, weights=self.fm.v[f])
  
+            #print self.beta_0, v_mu_mean, self.mu_0, self.meta.num_attr_per_group, self.v_lambda[:, f]
             v_mu_mean = (v_mu_mean + self.beta_0 * self.mu_0) / (self.meta.num_attr_per_group + self.beta_0)
             v_mu_sigma_sqr = 1.0 / ((self.meta.num_attr_per_group + self.beta_0) * self.v_lambda[:, f])
             #v_mu_old = self.v_mu[:,f]
@@ -501,27 +504,21 @@ class MCMC_learn:
             else:
                 self.v_mu[:,f] = v_mu_mean
        
-    def draw_v_lambda(self):
+    def draw_v_lambda(self): #Ok
         if not self.fm.do_multilevel:
             return
             
         for f in xrange(self.fm.num_factor):
-            print '# Factor:', f
             v_lambda_gamma = self.beta_0 * (self.v_mu[:,f] - self.mu_0) * (self.v_mu[:,f] - self.mu_0) + self.gamma_0
-            print '1st loop', v_lambda_gamma
             
             g = self.meta.attr_group
             v_lambda_gamma += np.bincount(g, weights=((self.fm.v[f,:] - self.v_mu[g,f]) * (self.fm.v[f,:] - self.v_mu[g,f])) )
-            print '2nd loop', v_lambda_gamma
 
             g = np.unique(g)
             v_lambda_alpha = self.alpha_0 + self.meta.num_attr_per_group[g] + 1
-            print 'v_lambda_alpha'
             #v_lambda_old = self.v_lambda[:,f]
             if self.fm.do_sample:
-                print 'Before v_lambda[:,f]', self.v_lambda[:,f]
                 self.v_lambda[:,f] = self.ran_gamma(v_lambda_alpha / 2.0, v_lambda_gamma / 2.0)
-                print 'After v_lambda[:,f]', self.v_lambda[:,f]
             else:
                 self.v_lambda[:,f] = v_lambda_alpha / v_lambda_gamma
        
