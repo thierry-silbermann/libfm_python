@@ -1,8 +1,10 @@
+import argparse
 import numpy as np
 import random
 import sys
 import scipy.sparse as sps
 from scipy.sparse import coo_matrix
+
 
 
 ####################################
@@ -36,7 +38,6 @@ class libFM:
     seed : int
         The seed of the pseudo random number generator
     """
-    
     def __init__(self, num_attribute, learn_rate=0.01, num_iter=50, dim=(1,1,1),
                 param_regular=(0,0,0.1), init_stdev=0.1, task='regression', 
                 method='mcmc', verbose=True, seed=None, output_file='output.csv'):
@@ -649,6 +650,44 @@ def get_num_attribute(filename):
     
              
 def main():
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-method", type=str, choices=['als', 'mcmc'], 
+                    default='mcmc',
+                    help="learning method (ALS, MCMC); default=mcmc")
+    parser.add_argument("-task", type=str, choices=['regression', 'classification'], 
+                    default='regression',
+                    help="regression: Labels are real values. / "+
+                         "classification: Labels are either positive or negative.")
+    parser.add_argument("-dim", type=str, 
+                    default='1,1,8',
+                    help="k0=use bias, k1=use 1-way interactions,"+
+                         "k2=dim of 2-way interactions; default=1,1,8")
+    parser.add_argument("-param_regular", type=str, 
+                    help="'r0,r1,r2' for SGD and ALS: r0=bias regularization,"+
+                         "r1=1-way regularization, r2=2-way regularization")
+    parser.add_argument("-seed", type=int, 
+                    default=None,
+                    help="The seed of the pseudo random number generator; default=None")
+    parser.add_argument("-iteration", type=int, 
+                    default=100,
+                    help="Number of iterations; default=100")
+    parser.add_argument("-learn_rate", type=float, 
+                    default=0.1,
+                    help="learn_rate for SGD; default=0.1")
+    parser.add_argument("-init_stdev", type=float, 
+                    default=0.01,
+                    help="Standard deviation for initialization of 2-way factors."+
+                         "Defaults to 0.01.")
+    
+    parser.add_argument("-train", type=str, 
+                    help="libfm train file; MANDATORY")
+    parser.add_argument("-test", type=str,
+                    help="libfm test file; MANDATORY")
+    args = parser.parse_args()
+
+
+
     train_file = 'data/small_train.libfm' #small_
     test_file = 'data/small_test.libfm'
     
@@ -660,7 +699,7 @@ def main():
     assert(num_all_attribute == max(train.num_feature, test.num_feature))
     
     meta = DataMetaInfo(num_all_attribute)
-    fm = libFM(num_all_attribute, seed=1, method='als')
+    fm = libFM(num_all_attribute, seed=args.seed, method=args.method, num_iter=args.iteration)
     mcmc = MCMC_learn(fm, meta, train, test)
     mcmc.learn()
     
