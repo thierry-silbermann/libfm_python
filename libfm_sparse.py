@@ -75,8 +75,12 @@ class libFM:
         #m_sum = np.zeros(self.num_factor)
         #m_sum_sqr = np.zeros(self.num_factor)
     
-        self.do_sample = True
-        self.do_multilevel = True
+        if method == 'mcmc':
+            self.do_sample = True
+            self.do_multilevel = True
+        elif method == 'als':
+            self.do_sample = False
+            self.do_multilevel = False
         self.save = True
         self.output_file = output_file
 
@@ -438,7 +442,7 @@ class MCMC_learn:
         
     def draw_w_mu(self):
         if not self.fm.do_multilevel:
-            self.w_mu = self.mu_0 * np.ones(self.w_mu) 
+            self.w_mu = self.mu_0 * np.ones_like(self.w_mu) 
             return
 
         w_mu_mean = self.cache_for_group_values
@@ -484,7 +488,7 @@ class MCMC_learn:
         
     def draw_v_mu(self): #Okish
         if not self.fm.do_multilevel:
-            self.v_mu = self.mu_0 * np.ones(self.v_mu) 
+            self.v_mu = self.mu_0 * np.ones_like(self.v_mu) 
             return
 
         v_mu_mean = self.cache_for_group_values
@@ -656,7 +660,7 @@ def main():
     assert(num_all_attribute == max(train.num_feature, test.num_feature))
     
     meta = DataMetaInfo(num_all_attribute)
-    fm = libFM(num_all_attribute, seed=1)
+    fm = libFM(num_all_attribute, seed=1, method='als')
     mcmc = MCMC_learn(fm, meta, train, test)
     mcmc.learn()
     
