@@ -38,15 +38,20 @@ class libFM:
     seed : int
         The seed of the pseudo random number generator
     """
-    def __init__(self, num_attribute, learn_rate=0.01, num_iter=50, dim=(1,1,1),
-                param_regular=(0,0,0.1), init_stdev=0.1, task='regression', 
+    def __init__(self, num_attribute, learn_rate=0.01, num_iter=50, dim='1,1,1',
+                param_regular='0,0,0.1', init_stdev=0.1, task='regression', 
                 method='mcmc', verbose=True, seed=None, output_file='output.csv'):
         
         self.num_attribute = num_attribute
         self.num_iter = num_iter
         #self.learn_rate = learn_rate
         self.init_stdev = init_stdev
-        self.dim = dim
+        dim = map(int, dim.split(','))
+        if len(dim) != 3:
+            raise Exception('Error dimension not matching 3')
+        param_regular = map(float, param_regular.split(','))
+        if len(param_regular) != 3:
+            raise Exception('Error dimension not matching 3')
         self.task = task
         self.method = method
         
