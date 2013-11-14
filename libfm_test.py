@@ -3,10 +3,10 @@ import random
 import sys
 import scipy.sparse as sps
 from scipy.sparse import coo_matrix
-from libfm_sparse_v1 import DataMetaInfo 
-from libfm_sparse_v1 import Data 
-from libfm_sparse_v1 import libFM
-from libfm_sparse_v1 import MCMC_learn
+from libfm_sparse_v2 import DataMetaInfo 
+from libfm_sparse_v2 import Data 
+from libfm_sparse_v2 import libFM
+from libfm_sparse_v2 import MCMC_learn
 import unittest
 
 class Initialisation():
