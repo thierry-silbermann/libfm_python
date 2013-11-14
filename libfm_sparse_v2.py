@@ -336,10 +336,10 @@ class MCMC_learn:
             cols = X.indices[start:stop]
             delta = np.dot(data, self.cache[0, cols]) / x_rows_sqr[row]
             
-            if np.isinf(self.fm.w[i]):
-                self.fm.w[i] = 0
-            elif np.isnan(self.fm.w[i]):
-                self.fm.w[i] = 0
+            if np.isinf(self.fm.w[row]):
+                self.fm.w[row] = 0
+            elif np.isnan(self.fm.w[row]):
+                self.fm.w[row] = 0
             else:
                 if self.fm.do_sample : 
                     w_sigma_sqr = 1.0 / x_rows_sqr[row]
@@ -349,17 +349,6 @@ class MCMC_learn:
                     
             self.cache[0, cols] -= delta * data
             
-            '''
-            if np.isinf(w):
-                w = 0
-            elif np.isnan(w):
-                w = 0
-            else:
-                if self.fm.do_sample : 
-                    w = self.ran_gaussian(w_mean, np.sqrt(w_sigma_sqr))
-                else:
-                    w = w_mean
-            '''
     ''' 
 ###########
        
