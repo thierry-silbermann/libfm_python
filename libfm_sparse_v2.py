@@ -40,7 +40,7 @@ class libFM:
     seed : int
         The seed of the pseudo random number generator
     """
-    def __init__(self, num_attribute, learn_rate=0.01, num_iter=50, dim='1,1,1',
+    def __init__(self, num_attribute, learn_rate=0.01, num_iter=2, dim='1,1,2',
                 param_regular='0,0,0.1', init_stdev=0.1, task='regression', 
                 method='mcmc', verbose=True, seed=None, output_file='output.csv'):
         
@@ -326,7 +326,7 @@ class MCMC_learn:
     # Find the optimal value for the 1-way interaction w
     def draw_w(self, w_mu, w_lambda):
 
-        X = self.train.data_t.tocsr()
+        X = self.train.data_t
         x_rows_sqr = np.add.reduceat(X.data*X.data, X.indptr[X.indptr<X.indptr[-1]])
         rows, cols = X.indptr[X.indptr<X.indptr[-1]].shape[0], X.shape[1]
         row_start_stop = as_strided(X.indptr, shape=(rows, 2), strides=2*X.indptr.strides)
@@ -386,7 +386,7 @@ class MCMC_learn:
     # Find the optimal value for the 2-way interaction parameter v
     def draw_v(self, f, v_mu, v_lambda): 
     
-        X = self.train.data_t.tocsr()
+        X = self.train.data_t
         rows, cols = X.indptr[X.indptr<X.indptr[-1]].shape[0], X.shape[1]
         row_start_stop = as_strided(X.indptr, shape=(rows, 2), strides=2*X.indptr.strides)
                                     
@@ -609,7 +609,7 @@ class Data:
         self.num_cases = num_rows 
 
         if has_xt:
-            self.data_t = self.data.transpose()
+            self.data_t = (self.data.transpose()).tocsr()
 
 ####################################
 ####################################
