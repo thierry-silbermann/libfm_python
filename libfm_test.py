@@ -50,7 +50,7 @@ class DataTests(unittest.TestCase):
         meta = DataMetaInfo(num_all_attribute)
         fm = libFM(num_all_attribute, seed=1, method='als', num_iter=1, dim='1,0,0',
                 param_regular='0,0,0.1', init_stdev=0.1)
-        mcmc = MCMC_learn(fm, meta, train, test)
+        mcmc = MCMC_learn(fm, meta, train, test, 0)
         mcmc.learn()
         self.assertAlmostEqual(fm.w0, 3.26666666667, places=7, msg=None, delta=None)
         np.testing.assert_array_almost_equal(mcmc.predict(), [ 3.26666667, 3.26666667, 3.26666667, 3.26666667], decimal=6, err_msg='', verbose=True)
@@ -61,7 +61,7 @@ class DataTests(unittest.TestCase):
         meta = DataMetaInfo(num_all_attribute)
         fm = libFM(num_all_attribute, seed=3, method='mcmc', num_iter=1000, dim='1,0,0',
                 param_regular='0,0,0.1', init_stdev=0.1)
-        mcmc = MCMC_learn(fm, meta, train, test)
+        mcmc = MCMC_learn(fm, meta, train, test, 0)
         mcmc.learn()
         np.testing.assert_array_almost_equal(mcmc.predict(), [ 3.266, 3.266, 3.266, 3.266], decimal=1, err_msg='', verbose=True)
     
@@ -73,7 +73,7 @@ class DataTests(unittest.TestCase):
                 param_regular='0,0,0.1', init_stdev=0.1)
         fm.w = np.array( [ 0.16243454, -0.06117564, -0.05281718, -0.10729686, 0.08654076, -0.23015387,
                             0.17448118, -0.07612069, 0.03190391] )
-        mcmc = MCMC_learn(fm, meta, train, test)
+        mcmc = MCMC_learn(fm, meta, train, test, 0)
         mcmc.learn()
         np.testing.assert_array_almost_equal(mcmc.predict(), [ 2.24725653, 3.91392319, 2.64163236, 3.9749657 ], decimal=5, err_msg='', verbose=True)
     
@@ -88,7 +88,7 @@ class DataTests(unittest.TestCase):
                 [0.00422137,0.05828152,-0.11006192,0.11447237,0.09015907,0.05024943,0.09008559,-0.06837279,-0.01228902],
                 [-0.09357694,-0.02678881,0.05303555,-0.06916608,-0.03967535,-0.06871727,-0.08452056,-0.06712461,-0.00126646]])
 
-        mcmc = MCMC_learn(fm, meta, train, test)
+        mcmc = MCMC_learn(fm, meta, train, test, 0)
         mcmc.learn()
         np.testing.assert_array_almost_equal(mcmc.predict(), [3.71472717, 5.0, 1.0, 5.0], decimal=5, err_msg='', verbose=True)
      
@@ -105,7 +105,7 @@ class DataTests(unittest.TestCase):
                 [0.00422137,0.05828152,-0.11006192,0.11447237,0.09015907,0.05024943,0.09008559,-0.06837279,-0.01228902],
                 [-0.09357694,-0.02678881,0.05303555,-0.06916608,-0.03967535,-0.06871727,-0.08452056,-0.06712461,-0.00126646]])
 
-        mcmc = MCMC_learn(fm, meta, train, test)
+        mcmc = MCMC_learn(fm, meta, train, test, 0)
         mcmc.learn()
         
         np.testing.assert_array_almost_equal(mcmc.predict(), [1.0, 4.73393, 1.05236, 5.0], decimal=4, err_msg='', verbose=True)      
