@@ -4,10 +4,25 @@ import random
 import sys
 import scipy.sparse as sps
 from scipy.sparse import coo_matrix
-import cProfile
-from pstats import Stats
 from numpy.lib.stride_tricks import as_strided
 
+# Usefull only for profilage
+import cProfile
+from pstats import Stats
+
+
+'''
+TODO
+Rewrite in draw_v and draw_w the option of the two lines below. 
+    w_sigma_sqr = 1.0 / (w_lambda[i] + self.alpha * w_sigma_sqr)
+    w_mean = - w_sigma_sqr * (self.alpha * w_mean - w_mu[i] * w_lambda[i])
+
+Take care for out of bounds values in each draw function
+
+Add classification possibility and not only regression
+
+Implement burn in
+'''
 
 ####################################
 ####################################
@@ -60,6 +75,7 @@ class libFM:
         if len(param_regular) != 3:
             raise Exception('Error dimension not matching 3')
         
+        
         self.num_attribute = num_attribute
         self.num_iter = num_iter
         self.learn_rate = learn_rate
@@ -106,7 +122,7 @@ class libFM:
    
 class MCMC_learn:
 
-    def __init__(self, fm, meta, train, test):
+    def __init__(self, fm, meta, train, test, burn):
         self.fm = fm
         self.meta = meta
         self.num_iter = fm.num_iter
@@ -136,6 +152,8 @@ class MCMC_learn:
 
         self.cache  = np.zeros((2, train.num_cases),dtype=float) #e_q_term 
         self.cache_test = np.zeros((2, test.num_cases), dtype=float) #e_q_term 
+        
+        self.burn = burn
         
     def learn(self):
 
@@ -234,14 +252,19 @@ class MCMC_learn:
             self.cache_test[0] += 0.5 * self.cache_test[1] * self.cache_test[1]
             self.cache_test[1] = np.zeros_like(self.cache_test[1])
      
-        # (2) do -1/2 sum_f (sum_i v_if^2 x_i^2) and store it in the q-term
+        
+        if self.fm.num_factor:
+            tmp1 = self.train.data_t.multiply(self.train.data_t)
+            tmp2 = self.test.data_t.multiply(self.test.data_t)
+        
+        # (2) do -1/2 sum_f (sum_i v_if^2 x_i^2) and store it in the q-term    
         for f in xrange(self.fm.num_factor):
             v = self.fm.v[f]
 
             # sum up the q^S_f terms in the main-q-cache: 0.5*sum_i (v_if x_i)^2 (== q^S_f-term)
             # Complexity: O(N_z(X^M))
-            self.cache[1] -= 0.5 * (v * v) * self.train.data_t.multiply(self.train.data_t)
-            self.cache_test[1] -= 0.5 * (v * v) * self.test.data_t.multiply(self.test.data_t)
+            self.cache[1] -= 0.5 * (v * v) * tmp1
+            self.cache_test[1] -= 0.5 * (v * v) * tmp2
 
         # (3) add the w's to the q-term    
         if self.fm.k1:
@@ -296,9 +319,8 @@ class MCMC_learn:
             
         for f in xrange(self.fm.num_factor):
 
-            self.cache[1] = np.zeros_like(self.cache[1])
             # add the q(f)-terms to the main relation q-cache (using only the transpose data)
-            self.cache[1] += self.fm.v[f]  * self.train.data_t
+            self.cache[1] = self.fm.v[f]  * self.train.data_t
             
             # draw the thetas from their posterior
             g = self.meta.attr_group
@@ -330,6 +352,7 @@ class MCMC_learn:
         x_rows_sqr = np.add.reduceat(X.data*X.data, X.indptr[X.indptr<X.indptr[-1]])
         rows, cols = X.indptr[X.indptr<X.indptr[-1]].shape[0], X.shape[1]
         row_start_stop = as_strided(X.indptr, shape=(rows, 2), strides=2*X.indptr.strides)
+        #row_start_stop = zip(X.indptr[:-1], X.indptr[1:])
                                     
         for row, (start, stop) in enumerate(row_start_stop):
             data = X.data[start:stop]
@@ -351,6 +374,7 @@ class MCMC_learn:
             
     ''' 
 ###########
+    Here to help for the implementation of the self.alpha, w_lambda options   
        
     for i in xrange(self.fm.w.shape[0]):
             if not i%1000:
@@ -384,11 +408,13 @@ class MCMC_learn:
     '''    
     
     # Find the optimal value for the 2-way interaction parameter v
+    #@profile
     def draw_v(self, f, v_mu, v_lambda): 
     
         X = self.train.data_t
         rows, cols = X.indptr[X.indptr<X.indptr[-1]].shape[0], X.shape[1]
         row_start_stop = as_strided(X.indptr, shape=(rows, 2), strides=2*X.indptr.strides)
+        #row_start_stop = zip(X.indptr[:-1], X.indptr[1:])
                                     
         for row, (start, stop) in enumerate(row_start_stop):
             #if not row%1000:
@@ -400,8 +426,8 @@ class MCMC_learn:
             h = data * Y
             v_sigma_sqr = np.dot(h,h)
             
-            #v_mean = (- np.dot(h, cache[0,cols]) + v_f[i] * v_sigma_sqr) / v_sigma_sqr; v_f[row] = v_mean
-            #v_mean = - np.dot(h, cache[0,cols]) / v_sigma_sqr + v_f[i] ; v_f[row] = v_mean
+            #v_mean = (- np.dot(h, cache[0,cols]) + v_f[row] * v_sigma_sqr) / v_sigma_sqr; v_f[row] = v_mean
+            #v_mean = - np.dot(h, cache[0,cols]) / v_sigma_sqr + v_f[row] ; v_f[row] = v_mean
             #delta = np.dot(h, cache[0,cols]) / v_sigma_sqr; v_f[row] -= delta
             delta = np.dot(h, self.cache[0,cols]) / v_sigma_sqr
             
@@ -664,6 +690,9 @@ def main():
     parser.add_argument("-iteration", type=int, 
                     default=100,
                     help="Number of iterations; default=100")
+    parser.add_argument("-burn", type=int, 
+                    default=0,
+                    help="Burn-in; default=0")
     parser.add_argument("-learn_rate", type=float, 
                     default=0.1,
                     help="learn_rate for SGD; default=0.1")
@@ -694,7 +723,7 @@ def main():
     fm = libFM(num_all_attribute, seed=args.seed, method=args.method, num_iter=args.iteration,
                 dim=args.dim)
 
-    mcmc = MCMC_learn(fm, meta, train, test)
+    mcmc = MCMC_learn(fm, meta, train, test, burn=args.burn)
     mcmc.learn()
 
 #cProfile.run('main()','script_perf')
