@@ -233,8 +233,8 @@ class MCMC_learn:
     
     def predict_data_and_write_to_eterms(self): #Ok
 
-        self.cache = np.zeros_like(self.cache) 
-        self.cache_test = np.zeros_like(self.cache_test) 
+        self.cache.fill(0)
+        self.cache_test.fill(0)
         
         # (1) do the 1/2 sum_f (sum_i v_if x_i)^2 and store it in the e/y-term
         for f in xrange(self.fm.num_factor):
@@ -248,14 +248,9 @@ class MCMC_learn:
             # add 0.5*q^2 to e and set q to zero.
             # O(n*|B|)
             self.cache[0] += 0.5 * self.cache[1] * self.cache[1]
-            self.cache[1] = np.zeros_like(self.cache[1])
+            self.cache[1].fill(0)
             self.cache_test[0] += 0.5 * self.cache_test[1] * self.cache_test[1]
-            self.cache_test[1] = np.zeros_like(self.cache_test[1])
-     
-        
-        if self.fm.num_factor:
-            tmp1 = self.train.data_t.multiply(self.train.data_t)
-            tmp2 = self.test.data_t.multiply(self.test.data_t)
+            self.cache_test[1].fill(0)
         
         # (2) do -1/2 sum_f (sum_i v_if^2 x_i^2) and store it in the q-term    
         for f in xrange(self.fm.num_factor):
@@ -263,8 +258,8 @@ class MCMC_learn:
 
             # sum up the q^S_f terms in the main-q-cache: 0.5*sum_i (v_if x_i)^2 (== q^S_f-term)
             # Complexity: O(N_z(X^M))
-            self.cache[1] -= 0.5 * (v * v) * tmp1
-            self.cache_test[1] -= 0.5 * (v * v) * tmp2
+            self.cache[1] -= 0.5 * (v * v) * self.train.tmp
+            self.cache_test[1] -= 0.5 * (v * v) * self.test.tmp
 
         # (3) add the w's to the q-term    
         if self.fm.k1:
@@ -278,7 +273,8 @@ class MCMC_learn:
         if self.fm.k0:
             self.cache[0] += self.fm.w0
             self.cache_test[0] += self.fm.w0
-        self.cache[1], self.cache_test[1] = np.zeros_like(self.cache[1]), np.zeros_like(self.cache_test[1]) 
+        self.cache[1].fill(0)
+        self.cache_test[1].fill(0)
        
     def evaluate(self, pred, target, normalizer, from_case, to_case):
         assert(pred.shape[0] == target.shape[0])
@@ -347,14 +343,12 @@ class MCMC_learn:
     
     # Find the optimal value for the 1-way interaction w
     def draw_w(self, w_mu, w_lambda):
-
+    
         X = self.train.data_t
-        x_rows_sqr = np.add.reduceat(X.data*X.data, X.indptr[X.indptr<X.indptr[-1]])
-        rows, cols = X.indptr[X.indptr<X.indptr[-1]].shape[0], X.shape[1]
-        row_start_stop = as_strided(X.indptr, shape=(rows, 2), strides=2*X.indptr.strides)
-        #row_start_stop = zip(X.indptr[:-1], X.indptr[1:])
+        x_rows_sqr = self.train.x_rows_sqr
+        rows, cols = self.train.t_rows, self.train.t_cols
                                     
-        for row, (start, stop) in enumerate(row_start_stop):
+        for row, (start, stop) in enumerate(self.train.row_start_stop):
             data = X.data[start:stop]
             cols = X.indices[start:stop]
             delta = np.dot(data, self.cache[0, cols]) / x_rows_sqr[row]
@@ -412,11 +406,9 @@ class MCMC_learn:
     def draw_v(self, f, v_mu, v_lambda): 
     
         X = self.train.data_t
-        rows, cols = X.indptr[X.indptr<X.indptr[-1]].shape[0], X.shape[1]
-        row_start_stop = as_strided(X.indptr, shape=(rows, 2), strides=2*X.indptr.strides)
-        #row_start_stop = zip(X.indptr[:-1], X.indptr[1:])
+        rows, cols = self.train.t_rows, self.train.t_cols
                                     
-        for row, (start, stop) in enumerate(row_start_stop):
+        for row, (start, stop) in enumerate(self.train.row_start_stop):
             #if not row%1000:
             #    print 'v', row
             data = X.data[start:stop]
@@ -462,11 +454,12 @@ class MCMC_learn:
         
     def draw_w_mu(self):
         if not self.fm.do_multilevel:
-            self.w_mu = self.mu_0 * np.ones_like(self.w_mu) 
+            self.w_mu.fill(1)
+            self.w_mu *= self.mu_0
             return
 
         w_mu_mean = self.cache_for_group_values
-        w_mu_mean = np.zeros_like(w_mu_mean)
+        w_mu_mean.fill(0)
         g = self.meta.attr_group
         w_mu_mean = np.bincount(g, weights=self.fm.w)
         
@@ -507,14 +500,15 @@ class MCMC_learn:
         
     def draw_v_mu(self): #Okish
         if not self.fm.do_multilevel:
-            self.v_mu = self.mu_0 * np.ones_like(self.v_mu) 
+            self.v_mu.fill(1)
+            self.v_mu *= self.mu_0
             return
 
         v_mu_mean = self.cache_for_group_values
         
         g = self.meta.attr_group
         for f in xrange(self.fm.num_factor):
-            v_mu_mean = np.zeros_like(v_mu_mean)
+            v_mu_mean.fill(0)
             v_mu_mean = np.bincount(g, weights=self.fm.v[f])
  
             #print self.beta_0, v_mu_mean, self.mu_0, self.meta.num_attr_per_group, self.v_lambda[:, f]
@@ -636,6 +630,11 @@ class Data:
 
         if has_xt:
             self.data_t = (self.data.transpose()).tocsr()
+            X = self.data_t
+            self.x_rows_sqr = np.add.reduceat(X.data*X.data, X.indptr[X.indptr<X.indptr[-1]])
+            self.t_rows, self.t_cols = X.indptr[X.indptr<X.indptr[-1]].shape[0], X.shape[1]
+            self.row_start_stop = as_strided(X.indptr, shape=(self.t_rows, 2), strides=2*X.indptr.strides)
+            self.tmp = self.data_t.multiply(self.data_t)
 
 ####################################
 ####################################
